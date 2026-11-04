@@ -139,6 +139,24 @@ export async function addClip(
 			? mediaTimeFromSeconds(input.startTime)
 			: endOfMainTrack(scene);
 	const duration = mediaTimeFromSeconds(media.durationSeconds);
+	const endTime = (startTime + duration) as MediaTime;
+
+	// Only reachable with an explicit `startTime` — the default (end of the
+	// main track) can't overlap anything by construction. Without this,
+	// `resolveFrame` (headless-render/src/scene.ts) silently picks whichever
+	// overlapping element comes first in the array; the new clip would be
+	// added successfully and then never actually render, with nothing
+	// telling the caller why.
+	const overlapping = scene.tracks.main.elements.find(
+		(el) => startTime < el.startTime + el.duration && endTime > el.startTime,
+	);
+	if (overlapping) {
+		throw new Error(
+			`addClip: startTime=${input.startTime}s would overlap element "${overlapping.id}" ` +
+				`(${secondsFromMediaTime(overlapping.startTime)}s .. ${secondsFromMediaTime((overlapping.startTime + overlapping.duration) as MediaTime)}s) ` +
+				"on the main track",
+		);
+	}
 
 	const element: VideoElement = {
 		id: nextId("el"),
@@ -245,6 +263,20 @@ export async function trimClip(
 			: element.trimEnd;
 	if (trimEnd <= trimStart) {
 		throw new Error("trimClip: trimEnd must be greater than trimStart");
+	}
+	// Without this, a trimEnd past the real file length is only caught at
+	// render time: the decoder asks ffmpeg for more frames than the source
+	// has, and the render job fails with a confusing "frame source
+	// exhausted" error instead of a clear one here, at the call that
+	// actually caused it.
+	const sourceDuration = mediaTimeFromSeconds(
+		store.getMediaOrThrow(element.mediaId).durationSeconds,
+	);
+	if (trimEnd > sourceDuration) {
+		throw new Error(
+			`trimClip: trimEndSeconds=${secondsFromMediaTime(trimEnd)} is past the source media's ` +
+				`duration (${secondsFromMediaTime(sourceDuration)}s)`,
+		);
 	}
 
 	element.trimStart = trimStart as MediaTime;
