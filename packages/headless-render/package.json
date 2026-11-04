@@ -1,0 +1,22 @@
+{
+	"name": "@opencut/headless-render",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Headless render orchestrator: loads a @opencut/project-schema Project, composites frames with @napi-rs/canvas, and muxes them with ffmpeg. No browser, no GPU compositor — valid for the MVP scope (no effects/masks); see docs/mcp-headless.md.",
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "tsx test/render.test.ts"
+	},
+	"dependencies": {
+		"@napi-rs/canvas": "^0.1.65",
+		"@opencut/project-schema": "file:../project-schema"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2"
+	}
+}

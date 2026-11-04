@@ -1,0 +1,454 @@
+<!-- layout: left rail TOC (sticky) + single reading column, like an engineering RFC -->
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>MCP + Headless cho OpenCut</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* color */
+    --bg:#f6f4ef; --surface:#ffffff; --ink:#1c1b19; --ink-dim:#5d584e;
+    --line:#e4ded0; --accent:#a8491f; --accent-soft:#f4e3d6;
+    --ok:#3c6e4a; --warn:#9a6a12; --risk:#a8431f;
+    --mono-bg:#efe9db;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#17150f; --surface:#1f1c15; --ink:#efe9da; --ink-dim:#ab9f8a;
+      --line:#352f22; --accent:#e08a4f; --accent-soft:#2c2013;
+      --ok:#6fb583; --warn:#d9a438; --risk:#e2724a;
+      --mono-bg:#221e15;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17150f; --surface:#1f1c15; --ink:#efe9da; --ink-dim:#ab9f8a;
+    --line:#352f22; --accent:#e08a4f; --accent-soft:#2c2013;
+    --ok:#6fb583; --warn:#d9a438; --risk:#e2724a;
+    --mono-bg:#221e15;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Source Serif 4", Georgia, serif;
+    font-size:16px; line-height:1.6;
+  }
+  h1,h2,h3,.label,.badge,.nav a,.tag,nav.toc,.diagram-caption,table,.meta-row{
+    font-family:"Manrope", system-ui, sans-serif;
+  }
+  code,.mono,.risk-id,td.mono-cell,.tool-name{
+    font-family:"JetBrains Mono", ui-monospace, monospace;
+  }
+
+  .shell{
+    max-width:1180px; margin:0 auto;
+    padding-block: 40px 96px;
+    display:grid; grid-template-columns: 240px minmax(0,1fr); gap:56px;
+  }
+  @media (max-width: 860px){
+    .shell{ grid-template-columns: 1fr; }
+    .toc{ display:none; }
+  }
+
+  /* ---- sidebar ---- */
+  .toc{ position:sticky; top:24px; align-self:start; }
+  .toc .eyebrow{
+    font-size:11px; letter-spacing:.11em; text-transform:uppercase;
+    color:var(--ink-dim); margin:0 0 14px;
+  }
+  .toc ol{ list-style:none; margin:0; padding:0; border-left:1px solid var(--line); }
+  .toc li{ margin:0; }
+  .toc a{
+    display:block; padding:7px 0 7px 16px; margin-left:-1px;
+    border-left:1px solid transparent;
+    color:var(--ink-dim); text-decoration:none; font-size:13.5px; font-weight:500;
+  }
+  .toc a:hover{ color:var(--ink); border-left-color:var(--accent); }
+  .toc .status{
+    margin-top:28px; padding:14px 16px; background:var(--surface);
+    border:1px solid var(--line); border-radius:10px; font-size:12.5px;
+    color:var(--ink-dim); line-height:1.55;
+  }
+  .toc .status strong{ color:var(--ink); display:block; margin-bottom:4px; font-weight:700;}
+
+  /* ---- header ---- */
+  header.doc-head{ max-width:66ch; }
+  .kicker{
+    display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;
+  }
+  .tag{
+    font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    padding:5px 10px; border-radius:999px; border:1px solid var(--line); color:var(--ink-dim);
+  }
+  .tag.accent{ color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
+  h1{
+    font-size:clamp(30px,4.2vw,42px); font-weight:800; letter-spacing:-.01em;
+    line-height:1.08; margin:0 0 14px; text-wrap:balance;
+  }
+  .dek{
+    font-family:"Source Serif 4", serif; font-size:18px; color:var(--ink-dim);
+    margin:0 0 6px; max-width:58ch;
+  }
+  .finding{
+    margin-top:28px; padding:20px 22px; background:var(--surface);
+    border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:4px 10px 10px 4px; font-size:15px; line-height:1.65;
+  }
+  .finding .label{ font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin-bottom:8px; display:block; }
+
+  /* ---- sections ---- */
+  section{ max-width:70ch; margin-top:64px; scroll-margin-top:24px; }
+  .meta-row{
+    display:flex; align-items:baseline; gap:10px; margin-bottom:6px;
+  }
+  .sec-no{ font-size:13px; font-weight:700; color:var(--accent); }
+  h2{ font-size:24px; font-weight:800; letter-spacing:-.005em; margin:0 0 18px; text-wrap:balance; }
+  h3{ font-size:16px; font-weight:700; margin:28px 0 10px; }
+  p{ margin:0 0 14px; }
+  .lede{ color:var(--ink-dim); font-size:15.5px; margin-bottom:22px; }
+
+  /* ---- tables ---- */
+  .table-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+  table{ width:100%; border-collapse:collapse; font-size:13.5px; min-width:560px; }
+  th{
+    text-align:left; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink-dim); padding:11px 14px; border-bottom:1px solid var(--line); white-space:nowrap;
+  }
+  td{ padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:top; font-family:"Source Serif 4",serif; font-size:14.5px;}
+  tr:last-child td{ border-bottom:none; }
+  td.mono-cell, .tool-name{ font-size:12.5px; }
+  .pill{
+    display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:700;
+    white-space:nowrap;
+  }
+  .pill.no{ background:var(--accent-soft); color:var(--accent); }
+  .pill.partial{ background:color-mix(in srgb, var(--warn) 18%, transparent); color:var(--warn); }
+  .pill.ready{ background:color-mix(in srgb, var(--ok) 18%, transparent); color:var(--ok); }
+
+  /* ---- diagram ---- */
+  .diagram-card{
+    border:1px solid var(--line); background:var(--surface); border-radius:12px;
+    padding:20px; margin:18px 0 8px;
+  }
+  pre.mermaid{ margin:0; }
+  .diagram-caption{ font-size:12px; color:var(--ink-dim); margin-top:10px; }
+
+  /* ---- component grid 2.x ---- */
+  .comp{
+    border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:14px;
+    background:var(--surface);
+  }
+  .comp h3{ margin:0 0 8px; display:flex; align-items:center; gap:10px; }
+  .comp .idx{
+    font-family:"JetBrains Mono",monospace; font-size:11px; color:var(--ink-dim);
+    border:1px solid var(--line); border-radius:5px; padding:2px 6px;
+  }
+  .comp p{ font-size:14.5px; margin:0; color:var(--ink); }
+  .comp p + p{ margin-top:8px; }
+
+  /* ---- risk list ---- */
+  .risk{
+    display:grid; grid-template-columns:auto 1fr; gap:14px;
+    padding:16px 0; border-bottom:1px solid var(--line);
+  }
+  .risk:last-child{ border-bottom:none; }
+  .risk-id{
+    font-size:13px; font-weight:600; color:var(--risk); background:var(--accent-soft);
+    border-radius:8px; width:30px; height:30px; display:flex; align-items:center; justify-content:center;
+  }
+  .risk h4{ margin:0 0 5px; font-family:"Manrope",sans-serif; font-size:15px; font-weight:700; }
+  .risk p{ margin:0; font-size:14px; color:var(--ink-dim); }
+  .risk-note{
+    margin-top:18px; padding:14px 16px; border:1px dashed var(--line); border-radius:8px;
+    font-size:13.5px; color:var(--ink-dim);
+  }
+
+  /* ---- roadmap ---- */
+  .steps{ list-style:none; margin:0; padding:0; counter-reset:step; }
+  .steps li{
+    position:relative; padding:0 0 26px 40px; counter-increment:step;
+  }
+  .steps li::before{
+    content:counter(step); position:absolute; left:0; top:0;
+    width:26px; height:26px; border-radius:50%; background:var(--accent); color:#fff;
+    font-family:"JetBrains Mono",monospace; font-size:12px; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .steps li::after{
+    content:""; position:absolute; left:13px; top:28px; bottom:0; width:1px; background:var(--line);
+  }
+  .steps li:last-child::after{ display:none; }
+  .steps strong{ font-family:"Manrope",sans-serif; font-weight:700; font-size:14.5px; }
+  .steps p{ margin:4px 0 0; font-size:14px; color:var(--ink-dim); }
+
+  /* ---- out of scope ---- */
+  ul.plain{ margin:0; padding-left:20px; }
+  ul.plain li{ margin-bottom:10px; font-size:14.5px; color:var(--ink); }
+  ul.plain li::marker{ color:var(--ink-dim); }
+
+  footer{
+    max-width:70ch; margin-top:72px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12.5px; color:var(--ink-dim);
+  }
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <p class="eyebrow">Mục lục</p>
+    <ol>
+      <li><a href="#survey">1 · Khảo sát hiện trạng</a></li>
+      <li><a href="#architecture">2 · Kiến trúc đề xuất</a></li>
+      <li><a href="#risks">3 · Rủi ro cần xác thực</a></li>
+      <li><a href="#roadmap">4 · Lộ trình triển khai</a></li>
+      <li><a href="#out-of-scope">5 · Ngoài phạm vi MVP</a></li>
+    </ol>
+    <div class="status">
+      <strong>Trạng thái</strong>
+Phase 0–4 xong, 04/11/2026: spike PASS, project schema, headless render, MCP server thật (12 tool qua stdio, agent gọi được, kết nối thật qua claude CLI) + persistence (project sống qua restart). Nguồn: <span class="mono">docs/mcp-headless.md</span>, repo <span class="mono">opencut-classic</span> (clone cục bộ).
+    </div>
+  </nav>
+
+  <main>
+    <header class="doc-head">
+      <div class="kicker">
+        <span class="tag accent">Server-side thuần</span>
+        <span class="tag">MVP: Core editing</span>
+        <span class="tag">OpenCut-classic</span>
+        <span class="tag" style="color:var(--ok);border-color:var(--ok)">Phase 0 — PASS</span>
+        <span class="tag" style="color:var(--ok);border-color:var(--ok)">Phase 1 — Done</span>
+        <span class="tag" style="color:var(--ok);border-color:var(--ok)">Phase 2 — Done</span>
+        <span class="tag" style="color:var(--ok);border-color:var(--ok)">Phase 3 — Done</span>
+        <span class="tag" style="color:var(--ok);border-color:var(--ok)">Phase 4 — Done</span>
+      </div>
+      <h1>MCP server + Headless render cho OpenCut</h1>
+      <p class="dek">Để agent (Claude, Codex…) dựng video bằng lệnh có cấu trúc thay vì click UI, và render ra file mà không cần mở trình duyệt.</p>
+
+      <div class="finding">
+        <span class="label">Phát hiện chính, từ việc đọc code thật</span>
+        Phần nặng nhất của pipeline — GPU compositor (<code>gpu</code> / <code>compositor</code> / <code>effects</code> / <code>masks</code>) — đã headless-ready trên native. <code>GpuContext::new()</code> chỉ cần <code>web_sys</code>/canvas khi build cho <code>wasm32</code>; trên native nó dùng <code>wgpu</code> qua Metal, render-to-texture, không cần display. Ba lớp còn chặn headless thật sự — vẽ layer, decode media, audio — đều có giải pháp server-side đã kiểm chứng rộng rãi.
+      </div>
+    </header>
+
+    <section id="survey">
+      <div class="meta-row"><span class="sec-no">01</span></div>
+      <h2>Khảo sát hiện trạng</h2>
+      <p class="lede">Đọc trực tiếp từ code trong <span class="mono">opencut-classic</span> — không suy đoán.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Thành phần</th><th>Vị trí</th><th>Phụ thuộc browser?</th><th>Ghi chú</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Project / timeline data model</td>
+              <td class="mono-cell">project/types.ts, timeline/types.ts</td>
+              <td><span class="pill ready">Không</span></td>
+              <td>Đã là plain data (TS interfaces), gần như JSON-able sẵn</td>
+            </tr>
+            <tr>
+              <td>Compositor (blend layer, GPU)</td>
+              <td class="mono-cell">rust/crates/compositor, gpu</td>
+              <td><span class="pill ready">Không</span></td>
+              <td>Dùng <code>wgpu</code>; native dùng Metal/Vulkan, render-to-texture, không cần display</td>
+            </tr>
+            <tr>
+              <td>Effects / masks pipeline</td>
+              <td class="mono-cell">rust/crates/effects, masks</td>
+              <td><span class="pill ready">Không</span></td>
+              <td>Thuần Rust, dùng chung <code>GpuContext</code></td>
+            </tr>
+            <tr>
+              <td>WASM glue hiện tại</td>
+              <td class="mono-cell">rust/wasm/src/*.rs</td>
+              <td><span class="pill partial">Có</span></td>
+              <td>Chỉ là lớp bind browser — không phải engine, viết glue native song song được</td>
+            </tr>
+            <tr>
+              <td>Scene orchestration</td>
+              <td class="mono-cell">services/renderer/scene-builder.ts</td>
+              <td><span class="pill partial">Một phần</span></td>
+              <td>Logic tổ chức node thuần TS; nhưng gọi thẳng OffscreenCanvas</td>
+            </tr>
+            <tr>
+              <td>Vẽ layer (canvas 2D)</td>
+              <td class="mono-cell">canvas-renderer.ts, nodes/*.ts</td>
+              <td><span class="pill no">Có</span></td>
+              <td>OffscreenCanvas + CanvasRenderingContext2D trực tiếp</td>
+            </tr>
+            <tr>
+              <td>Decode / probe media</td>
+              <td class="mono-cell">media/mediabunny.ts</td>
+              <td><span class="pill no">Có</span></td>
+              <td>Thư viện mediabunny, dựa trên WebCodecs API</td>
+            </tr>
+            <tr>
+              <td>Audio mixing</td>
+              <td class="mono-cell">media/audio.ts, audio-mastering.ts</td>
+              <td><span class="pill no">Có</span></td>
+              <td>AudioContext / OfflineAudioContext (Web Audio API)</td>
+            </tr>
+            <tr>
+              <td>Export hiện tại</td>
+              <td class="mono-cell">export/index.ts</td>
+              <td><span class="pill no">Có</span></td>
+              <td><code>downloadBuffer()</code> chỉ là UI download, không phải render pipeline</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="lede" style="margin-top:16px">Kết luận: lớp tính pixel (GPU compositor) đã headless-ready; ba lớp chặn headless — vẽ layer, decode media, audio — đều có giải pháp thay thế đã kiểm chứng rộng rãi, không phải nghiên cứu mới.</p>
+    </section>
+
+    <section id="architecture">
+      <div class="meta-row"><span class="sec-no">02</span></div>
+      <h2>Kiến trúc đề xuất</h2>
+
+      <div class="diagram-card">
+        <pre class="mermaid">
+graph TD
+    A["Agent — Claude / Codex"] -->|"tool calls"| B["MCP server (Node)"]
+    B --> C["Project store<br/>(schema = TProject)"]
+    C -->|"export_video(projectId, options)"| D["Headless render job<br/>(Node orchestrator)"]
+    D --> E["Media I/O<br/>ffmpeg: decode / encode"]
+    D --> F["Layer compositing<br/>@napi-rs/canvas"]
+    D --> G["Native compositor crate<br/>gpu · compositor · effects · masks"]
+        </pre>
+        <p class="diagram-caption">Agent gửi lệnh qua MCP → thao tác project store (data thuần) → export kích hoạt job render chạy ba lớp song song, không qua trình duyệt.</p>
+      </div>
+
+      <h3 style="margin-top:36px">2.1 — Project store</h3>
+      <div class="comp">
+        <p><code>TProject</code> / <code>TScene</code> / <code>TimelineTrack</code> hiện đã là data thuần (không gắn DOM) → dùng thẳng làm schema. Chỉ cần viết Zod schema song song để validate input từ MCP tool, và bỏ các field chỉ dùng cho UI (<code>timelineViewState</code>, thumbnail dạng blob URL).</p>
+      </div>
+
+      <h3>2.2 — Native render engine</h3>
+      <div class="comp">
+        <p>Crate mới <code>rust/crates/headless-render</code> (hoặc N-API binding qua <code>napi-rs</code>) gọi thẳng <code>gpu::GpuContext</code>, <code>compositor</code>, <code>effects</code>, <code>masks</code> — không qua wasm-bindgen, build cho target native. Rủi ro thấp nhất vì code đã target-agnostic.</p>
+      </div>
+
+      <h3>2.3 — Layer compositing</h3>
+      <div class="comp">
+        <p>Dùng <code>@napi-rs/canvas</code> (Skia native, API tương thích OffscreenCanvas/CanvasRenderingContext2D) chạy trong Node — tái dùng phần lớn <code>canvas-renderer.ts</code> và <code>nodes/*.ts</code> gần như nguyên bản, thay vì viết lại bằng Rust. Lựa chọn thực dụng: ít rủi ro, tốc độ phát triển nhanh.</p>
+      </div>
+
+      <h3>2.4 — Media I/O</h3>
+      <div class="comp">
+        <p>Thay <code>mediabunny</code>/WebCodecs bằng <strong>ffmpeg</strong> (spawn process) — decode frame theo thời điểm cần, encode frame ra video output. Audio dùng filter graph ffmpeg (<code>amix</code>, <code>atrim</code>, <code>volume</code>) thay <code>AudioContext</code>/<code>OfflineAudioContext</code> — thay thế trực tiếp, không cần port logic DSP.</p>
+      </div>
+
+      <h3>2.5 — MCP server · tool cho MVP</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Chức năng</th></tr></thead>
+          <tbody>
+            <tr><td class="tool-name">create_project</td><td>Tạo project mới (canvas size, fps, background)</td></tr>
+            <tr><td class="tool-name">list_projects</td><td>Liệt kê project đã lưu trên đĩa, mới nhất trước</td></tr>
+            <tr><td class="tool-name">add_media</td><td>Nạp file video/ảnh/audio vào project (ffmpeg probe lấy metadata)</td></tr>
+            <tr><td class="tool-name">add_clip</td><td>Thêm clip vào track tại thời điểm cho trước</td></tr>
+            <tr><td class="tool-name">split_clip</td><td>Cắt clip tại một thời điểm (dựa logic ripple/, timeline/creation.ts có sẵn)</td></tr>
+            <tr><td class="tool-name">trim_clip</td><td>Chỉnh trimStart / trimEnd</td></tr>
+            <tr><td class="tool-name">add_text</td><td>Thêm text element (nội dung, font, vị trí, thời lượng)</td></tr>
+            <tr><td class="tool-name">remove_element</td><td>Xoá một phần tử khỏi track</td></tr>
+            <tr><td class="tool-name">get_project_state</td><td>Trả về toàn bộ TProject hiện tại (JSON)</td></tr>
+            <tr><td class="tool-name">delete_project</td><td>Xoá project khỏi đĩa</td></tr>
+            <tr><td class="tool-name">export_video</td><td>Khởi chạy render job, trả về jobId</td></tr>
+            <tr><td class="tool-name">get_render_status</td><td>Poll trạng thái/progress job, trả path file khi xong</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="lede" style="margin-top:14px">Tool chỉnh sửa chạy đồng bộ (thao tác data thuần, nhanh). <span class="tool-name">export_video</span> chạy job nền — không block MCP — vì render có thể mất vài giây đến vài phút.</p>
+    </section>
+
+    <section id="risks">
+      <div class="meta-row"><span class="sec-no">03</span></div>
+      <h2>Phase 0 — rủi ro kiến trúc, đã spike xong</h2>
+      <p class="lede">Chạy thật trên máy (Apple M1, macOS), 04/11/2026 — không phải suy đoán từ tài liệu. Code spike lưu tại <span class="mono">docs/spikes/</span>.</p>
+
+      <div class="risk">
+        <span class="risk-id" style="color:var(--ok);background:color-mix(in srgb, var(--ok) 18%, transparent)">✓</span>
+        <div>
+          <h4>wgpu init headless trên macOS — <span style="color:var(--ok)">PASS</span></h4>
+          <p>Binary Rust (<span class="mono">docs/spikes/gpu-spike</span>) gọi <code>GpuContext::new()</code> ngoài wasm, tạo render texture, clear màu, copy-to-buffer, đọc lại pixel. Kết quả thật:</p>
+          <div class="table-wrap" style="margin-top:10px">
+            <pre style="margin:0;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;background:var(--mono-bg)">adapter acquired: name=Apple M1 backend=Metal device_type=IntegratedGpu
+texture_format=Bgra8Unorm first_pixel_bytes=[0, 0, 255, 255]
+PASS: render-to-texture + readback round-trip, fully headless,
+no window/canvas/display involved.</pre>
+          </div>
+          <p style="margin-top:8px">Xác nhận <code>acquire_device()</code> native dùng <code>InstanceDescriptor::new_without_display_handle()</code> + <code>compatible_surface: None</code> — đúng kỳ vọng, không cần surface/window nào.</p>
+        </div>
+      </div>
+      <div class="risk">
+        <span class="risk-id" style="color:var(--ok);background:color-mix(in srgb, var(--ok) 18%, transparent)">✓</span>
+        <div>
+          <h4>@napi-rs/canvas tương thích — <span style="color:var(--ok)">PASS, 7/7</span></h4>
+          <p><code>save/restore/translate/scale/rotate</code>, <code>globalCompositeOperation</code> (multiply/screen/overlay/lighter), <code>ctx.filter = "blur(4px)"</code>, <code>roundRect</code>, <code>font</code> + <code>measureText</code> (có actualBoundingBox) + <code>fillText</code>, và xuất PNG thật — mở ảnh thấy đúng rect bo góc + text render đúng font/vị trí. API bám sát Canvas2D chuẩn, phần lớn <span class="mono">canvas-renderer.ts</span>/<span class="mono">nodes/*.ts</span> tái dùng gần như nguyên bản, chỉ đổi điểm khởi tạo canvas.</p>
+        </div>
+      </div>
+      <div class="risk">
+        <span class="risk-id" style="color:var(--warn);background:color-mix(in srgb, var(--warn) 18%, transparent)">~</span>
+        <div>
+          <h4>Font loading — xác nhận một phần</h4>
+          <p><code>GlobalFonts.registerFromPath()</code> nạp được font .ttf hệ thống, <code>ctx.font</code> nhận đúng family. Chưa kiểm web font (Google Fonts tải về rồi register) — để lúc build thật.</p>
+        </div>
+      </div>
+      <div class="risk">
+        <span class="risk-id" style="color:var(--warn);background:color-mix(in srgb, var(--warn) 18%, transparent)">~</span>
+        <div>
+          <h4>ffmpeg decode — xác nhận bước đầu</h4>
+          <p><code>ffmpeg -f lavfi ... -f rawvideo -pix_fmt rgba</code> xuất đúng <code>width×height×4</code> byte. Chưa kiểm frame timing cho retime/speed ramp, color space, audio resample — cần project thật để so sánh, để lúc build.</p>
+        </div>
+      </div>
+
+      <p class="risk-note">Kết luận: không còn rủi ro kiến trúc. Hai rủi ro lớn nhất (wgpu headless, napi-rs/canvas) đã pass với bằng chứng chạy thật. Phần còn lại là chi tiết tích hợp, xử lý trong lúc build Phase 1–4.</p>
+    </section>
+
+    <section id="roadmap">
+      <div class="meta-row"><span class="sec-no">04</span></div>
+      <h2>Lộ trình triển khai</h2>
+      <p class="lede">Sau khi Phase 0 pass.</p>
+      <ol class="steps">
+        <li>
+          <strong>Project schema + Zod validation — <span style="color:var(--ok)">xong</span></strong>
+          <p>Package <span class="mono">packages/project-schema</span>: MediaTime/FrameRate mirror đúng struct Rust, đủ 7 loại element + 5 loại track, <span class="mono">Mask</span>/<span class="mono">ElementAnimations</span> passthrough có chủ đích (ngoài MVP). 7/7 test round-trip PASS, <span class="mono">tsc --noEmit</span> sạch.</p>
+        </li>
+        <li>
+          <strong>headless-render orchestrator — <span style="color:var(--ok)">xong</span></strong>
+          <p>Package <span class="mono">packages/headless-render</span>. Phát hiện: với MVP (không effect/mask), native compositor crate Rust <strong>không nằm trên đường găng</strong> — base compositing trong code gốc là Canvas2D thuần, GPU chỉ phục vụ effect/mask. Nên pipeline MVP chỉ cần napi-rs/canvas + ffmpeg. Test end-to-end thật: render 15 frame từ project mẫu (1 clip + 1 text) → ffprobe xác nhận đúng codec/kích thước/số frame, xem 1 frame bằng mắt thấy đúng cả video lẫn text overlay.</p>
+        </li>
+        <li>
+          <strong>MCP server — <span style="color:var(--ok)">xong</span></strong>
+          <p>Package <span class="mono">packages/mcp-server</span>, <span class="mono">@modelcontextprotocol/sdk</span> qua stdio, đủ 10 tool. Mọi tool nhận/trả thời gian bằng giây, quy đổi sang MediaTime tick ở biên. <span class="mono">add_media</span> dùng ffprobe thật, <span class="mono">export_video</span> không block (job nền + poll). Test 2 lớp — logic thuần (<span class="mono">tools.test.ts</span>) và giao thức MCP thật qua stdio process con + SDK Client thật (<span class="mono">protocol.test.ts</span>: tools/list đủ 10 tool, tools/call thành công lẫn báo lỗi đúng) — đều PASS.</p>
+        </li>
+        <li>
+          <strong>Test end-to-end — <span style="color:var(--ok)">xong (qua MCP tool)</span></strong>
+          <p>Flow đầy đủ qua tool: create_project → add_media → add_clip → split_clip → trim_clip → add_text → export_video → poll đến "done" → ffprobe xác nhận file mp4 thật. Phần so sánh với bản export từ web gốc — ngoài phạm vi đã làm, cần build bản web chạy được để đối chiếu.</p>
+        </li>
+        <li>
+          <strong>Project persistence — <span style="color:var(--ok)">xong</span></strong>
+          <p>Phát sinh từ lúc dùng thử thật (project mất khi server restart). Thiết kế: mỗi project → 1 file JSON riêng (<span class="mono">~/.opencut-headless/projects/&lt;id&gt;.json</span>, đổi được qua env). <strong>Lazy-load</strong> — không đọc gì lúc khởi động, chỉ đọc khi tool cần đúng project đó, nên khởi động nhanh bất kể có bao nhiêu project trên đĩa. Mỗi lần sửa ghi đè file ngay (write-through). Thêm tool <span class="mono">list_projects</span> + <span class="mono">delete_project</span>. <span class="mono">media</span>/<span class="mono">jobs</span> vẫn chỉ in-memory, cố ý, ghi rõ trong code. Test mô phỏng <strong>restart thật</strong>: <span class="mono">ProjectStore</span> thứ hai cùng thư mục, cache rỗng, đọc lại + list + export + xoá đều đúng — không đụng thư mục home thật.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="out-of-scope">
+      <div class="meta-row"><span class="sec-no">05</span></div>
+      <h2>Ngoài phạm vi MVP</h2>
+      <p class="lede">Ghi nhận, chưa làm trong bản đầu.</p>
+      <ul class="plain">
+        <li>Auto-caption/transcription — module <span class="mono">transcription/</span> gọi model ASR cần xác minh riêng; có thể chạy server-side dễ dàng vì không DOM-bound, nhưng chưa khảo sát.</li>
+        <li>Sticker/graphic nâng cao, effect phức tạp, GPU-only effect preview.</li>
+        <li>Thiết kế ngược (round-trip) — mở lại project JSON trong UI web để người dùng sửa tay sau khi agent tạo. Cần, nhưng không chặn MVP.</li>
+      </ul>
+    </section>
+
+    <footer>
+      Nguồn: đọc trực tiếp code trong <span class="mono">opencut-app/opencut-classic</span> (MIT, archived). Tài liệu gốc dạng Markdown: <span class="mono">docs/mcp-headless.md</span>.
+    </footer>
+  </main>
+</div>

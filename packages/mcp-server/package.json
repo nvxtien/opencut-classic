@@ -1,0 +1,28 @@
+{
+	"name": "@opencut/mcp-server",
+	"version": "0.1.0",
+	"private": true,
+	"description": "MCP server exposing the MVP core-editing tools (create/edit a project, export video) over stdio, backed by @opencut/project-schema and @opencut/headless-render. See docs/mcp-headless.md §2.5.",
+	"type": "module",
+	"main": "./src/server.ts",
+	"bin": {
+		"opencut-mcp-server": "./src/server.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"start": "tsx src/server.ts",
+		"start:http": "tsx src/http-server.ts",
+		"test": "tsx test/tools.test.ts && tsx test/protocol.test.ts && tsx test/http-protocol.test.ts"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.32.2",
+		"@opencut/headless-render": "file:../headless-render",
+		"@opencut/project-schema": "file:../project-schema",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2"
+	}
+}
