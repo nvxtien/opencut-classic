@@ -8,7 +8,7 @@
 	"types": "./src/index.ts",
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "tsx test/render.test.ts"
+		"test": "tsx test/render.test.ts && tsx test/encode.test.ts"
 	},
 	"dependencies": {
 		"@napi-rs/canvas": "^0.1.65",

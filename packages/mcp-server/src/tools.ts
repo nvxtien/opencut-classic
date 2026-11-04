@@ -1,6 +1,7 @@
 import type {
 	CanvasSize,
 	FrameRate,
+	ImageElement,
 	MediaTime,
 	Project,
 	Scene,
@@ -143,16 +144,22 @@ function endOfMainTrack(scene: Scene): MediaTime {
 	return end;
 }
 
+/** Like `endOfMainTrack`, but also considers overlay tracks (text etc.) — used wherever the real end of the scene matters (export length, displayed duration), as opposed to `endOfMainTrack`, which `addClip` uses on purpose to place new video clips after the last video clip specifically. */
+function endOfScene(scene: Scene): MediaTime {
+	let end = endOfMainTrack(scene);
+	for (const track of scene.tracks.overlay) {
+		for (const element of track.elements) {
+			const elementEnd = (element.startTime + element.duration) as MediaTime;
+			if (elementEnd > end) end = elementEnd;
+		}
+	}
+	return end;
+}
+
 /** Updates derived metadata and write-throughs the project to disk. The one place every mutating tool funnels through before returning. */
 async function touchAndSave(store: ProjectStore, project: Project): Promise<void> {
 	project.metadata.updatedAt = new Date();
-	const scene = mainScene(project);
-	let maxEnd = 0 as MediaTime;
-	for (const element of scene.tracks.main.elements) {
-		const end = (element.startTime + element.duration) as MediaTime;
-		if (end > maxEnd) maxEnd = end;
-	}
-	project.metadata.duration = maxEnd;
+	project.metadata.duration = endOfScene(mainScene(project));
 	await store.saveProject(project);
 }
 
@@ -202,8 +209,8 @@ export interface SplitClipInput {
 }
 
 export interface SplitClipResult {
-	left: VideoElement;
-	right: VideoElement;
+	left: VideoElement | ImageElement;
+	right: VideoElement | ImageElement;
 }
 
 export async function splitClip(
@@ -217,7 +224,10 @@ export async function splitClip(
 	if (index === -1) {
 		throw new Error(`No element "${input.elementId}" on the main track`);
 	}
-	const original = elements[index] as VideoElement;
+	// Main-track elements are always video or image (see `VideoTrackSchema`),
+	// never a bare cast to one specific type — splitting an image clip is
+	// just as valid as splitting a video clip.
+	const original = elements[index] as VideoElement | ImageElement;
 	const at = mediaTimeFromSeconds(input.atSeconds);
 	if (at <= original.startTime || at >= original.startTime + original.duration) {
 		throw new Error(
@@ -229,12 +239,12 @@ export async function splitClip(
 	const leftDuration = (at - original.startTime) as MediaTime;
 	const rightDuration = (original.duration - leftDuration) as MediaTime;
 
-	const left: VideoElement = {
+	const left: VideoElement | ImageElement = {
 		...original,
 		duration: leftDuration,
 		trimEnd: (original.trimStart + leftDuration) as MediaTime,
 	};
-	const right: VideoElement = {
+	const right: VideoElement | ImageElement = {
 		...original,
 		id: nextId("el"),
 		startTime: at,
@@ -416,7 +426,7 @@ export async function exportVideo(
 		mediaPaths[element.mediaId] = store.getMediaOrThrow(element.mediaId).path;
 	}
 
-	const durationSeconds = secondsFromMediaTime(endOfMainTrack(scene));
+	const durationSeconds = secondsFromMediaTime(endOfScene(scene));
 	const fps = project.settings.fps.numerator / project.settings.fps.denominator;
 
 	const jobId = nextId("job");

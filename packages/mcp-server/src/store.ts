@@ -52,6 +52,8 @@ export interface ProjectSummary {
 export class ProjectStore {
 	private readonly dataDir: string;
 	private readonly cache = new Map<string, Project>();
+	/** In-flight disk loads, keyed by projectId — see `getProject`. */
+	private readonly loading = new Map<string, Promise<Project>>();
 	readonly media = new Map<string, MediaRecord>();
 	readonly jobs = new Map<string, RenderJob>();
 
@@ -67,20 +69,36 @@ export class ProjectStore {
 		await mkdir(this.dataDir, { recursive: true });
 	}
 
-	/** Loads a project (from cache, else from disk) or throws. */
+	/**
+	 * Loads a project (from cache, else from disk) or throws. Two calls for
+	 * the same not-yet-cached project share one disk read instead of racing:
+	 * without this, each would parse its own separate copy and whichever
+	 * finished its edit and saved last would silently overwrite the other's.
+	 */
 	async getProject(projectId: string): Promise<Project> {
 		const cached = this.cache.get(projectId);
 		if (cached) return cached;
 
-		let raw: string;
+		const inFlight = this.loading.get(projectId);
+		if (inFlight) return inFlight;
+
+		const load = (async () => {
+			let raw: string;
+			try {
+				raw = await readFile(this.projectPath(projectId), "utf8");
+			} catch {
+				throw new Error(`No project with id "${projectId}"`);
+			}
+			const project = ProjectSchema.parse(JSON.parse(raw));
+			this.cache.set(projectId, project);
+			return project;
+		})();
+		this.loading.set(projectId, load);
 		try {
-			raw = await readFile(this.projectPath(projectId), "utf8");
-		} catch {
-			throw new Error(`No project with id "${projectId}"`);
+			return await load;
+		} finally {
+			this.loading.delete(projectId);
 		}
-		const project = ProjectSchema.parse(JSON.parse(raw));
-		this.cache.set(projectId, project);
-		return project;
 	}
 
 	/** Writes a project to disk and refreshes the in-memory cache. Used both for a brand-new project and after mutating an already-loaded one. */

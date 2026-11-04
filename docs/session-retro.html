@@ -1,0 +1,283 @@
+<!-- layout: hero stats → research comparison → vertical phase timeline → debugging saga callout → outcome -->
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Building MCP for OpenCut</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f6f4ef; --surface:#ffffff; --ink:#1c1b19; --ink-dim:#5d584e;
+    --line:#e4ded0; --accent:#a8491f; --accent-soft:#f4e3d6;
+    --ok:#3c6e4a; --ok-soft:#e3ede5; --warn:#9a6a12; --warn-soft:#f3e9d2;
+    --mono-bg:#efe9db;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#17150f; --surface:#1f1c15; --ink:#efe9da; --ink-dim:#ab9f8a;
+      --line:#352f22; --accent:#e08a4f; --accent-soft:#2c2013;
+      --ok:#6fb583; --ok-soft:#1d2a20; --warn:#d9a438; --warn-soft:#2b2311;
+      --mono-bg:#221e15;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#17150f; --surface:#1f1c15; --ink:#efe9da; --ink-dim:#ab9f8a;
+    --line:#352f22; --accent:#e08a4f; --accent-soft:#2c2013;
+    --ok:#6fb583; --ok-soft:#1d2a20; --warn:#d9a438; --warn-soft:#2b2311;
+    --mono-bg:#221e15;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box}
+  body{ background:var(--bg); color:var(--ink); font-family:"Source Serif 4", Georgia, serif; font-size:16px; line-height:1.6; }
+  h1,h2,h3,.label,.badge,.stat-label,table,.mono,code{ font-family:"Manrope", system-ui, sans-serif; }
+  code,.mono,.tool-name{ font-family:"JetBrains Mono", ui-monospace, monospace; }
+
+  .shell{ max-width:860px; margin:0 auto; padding-block:48px 100px; }
+
+  header{ margin-bottom:40px; }
+  .kicker{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+  .tag{ font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:5px 10px; border-radius:999px; border:1px solid var(--line); color:var(--ink-dim); }
+  h1{ font-size:clamp(32px,5vw,46px); font-weight:800; letter-spacing:-.01em; line-height:1.07; margin:0 0 16px; text-wrap:balance; }
+  .dek{ font-family:"Source Serif 4", serif; font-size:18.5px; color:var(--ink-dim); margin:0; max-width:62ch; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:32px; }
+  .stat{ background:var(--surface); padding:18px 14px; text-align:center; }
+  .stat .n{ font-family:"Manrope",sans-serif; font-weight:800; font-size:26px; font-variant-numeric:tabular-nums; color:var(--accent); line-height:1.1; }
+  .stat .stat-label{ font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-dim); margin-top:4px; }
+  @media (max-width:560px){ .stats{ grid-template-columns:repeat(2,1fr); } }
+
+  section{ margin-top:56px; }
+  h2{ font-size:22px; font-weight:800; margin:0 0 8px; letter-spacing:-.005em; }
+  .section-dek{ color:var(--ink-dim); font-size:15px; margin:0 0 22px; max-width:62ch; }
+
+  /* research comparison */
+  .compare{ display:grid; gap:10px; }
+  .compare-row{ display:grid; grid-template-columns:140px 1fr; gap:16px; padding:14px 16px; background:var(--surface); border:1px solid var(--line); border-radius:10px; align-items:start; }
+  .compare-row .opt{ font-family:"Manrope",sans-serif; font-weight:700; font-size:13.5px; color:var(--ink); }
+  .compare-row .verdict{ font-size:13.5px; color:var(--ink-dim); }
+  .compare-row.chosen{ border-color:var(--accent); background:var(--accent-soft); }
+  .compare-row.chosen .opt{ color:var(--accent); }
+  @media (max-width:520px){ .compare-row{ grid-template-columns:1fr; } }
+
+  /* timeline */
+  .timeline{ position:relative; padding-left:34px; }
+  .timeline::before{ content:""; position:absolute; left:11px; top:6px; bottom:6px; width:1px; background:var(--line); }
+  .phase{ position:relative; margin-bottom:30px; }
+  .phase:last-child{ margin-bottom:0; }
+  .phase::before{
+    content:""; position:absolute; left:-34px; top:4px; width:22px; height:22px; border-radius:50%;
+    background:var(--ok); border:3px solid var(--bg);
+  }
+  .phase-head{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+  .phase-no{ font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--ink-dim); }
+  .phase h3{ font-family:"Manrope",sans-serif; font-size:17px; font-weight:700; margin:0; }
+  .phase .pass{ font-size:11px; font-weight:700; color:var(--ok); background:var(--ok-soft); padding:2px 8px; border-radius:999px; }
+  .phase p{ margin:0 0 8px; font-size:14.5px; color:var(--ink); }
+  .phase .evidence{ font-size:13px; color:var(--ink-dim); background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-top:8px; }
+  .phase .evidence code{ font-size:12px; }
+
+  /* saga */
+  .saga{ background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--warn); border-radius:4px 10px 10px 4px; padding:22px 24px; }
+  .saga-step{ display:flex; gap:12px; padding:10px 0; border-bottom:1px dashed var(--line); }
+  .saga-step:last-child{ border-bottom:none; padding-bottom:0; }
+  .saga-step .num{ font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--warn); flex:0 0 auto; width:18px; }
+  .saga-step .body{ font-size:14px; }
+  .saga-step .body strong{ font-family:"Manrope",sans-serif; }
+  .saga-step code{ font-size:12.5px; background:var(--mono-bg); padding:1px 5px; border-radius:4px; }
+
+  /* outcome */
+  .outcome{ display:grid; gap:12px; }
+  .link-card{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px 18px; background:var(--surface); border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; }
+  .link-card .meta{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-dim); margin-bottom:3px; }
+  .link-card .name{ font-family:"JetBrains Mono",monospace; font-size:14px; color:var(--ink); }
+  .link-card a{ font-size:13px; font-weight:700; color:var(--accent); text-decoration:none; white-space:nowrap; }
+  .link-card a:hover{ text-decoration:underline; }
+
+  ul.plain{ margin:0; padding-left:20px; }
+  ul.plain li{ margin-bottom:8px; font-size:14.5px; }
+  ul.plain li::marker{ color:var(--ink-dim); }
+
+  footer{ margin-top:64px; padding-top:20px; border-top:1px solid var(--line); font-size:12.5px; color:var(--ink-dim); }
+</style>
+
+<div class="shell">
+  <header>
+    <div class="kicker">
+      <span class="tag">Session retrospective</span>
+      <span class="tag">04–05 Nov 2026</span>
+    </div>
+    <h1>Building MCP for OpenCut</h1>
+    <p class="dek">Từ một câu hỏi — "làm sao để agent điều khiển được video editor" — đến một MCP server thật, đã dựng và export video qua tool call, trên fork riêng của bạn.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="n">4</div><div class="stat-label">Phase thiết kế</div></div>
+      <div class="stat"><div class="n">3</div><div class="stat-label">Package</div></div>
+      <div class="stat"><div class="n">12</div><div class="stat-label">MCP tool</div></div>
+      <div class="stat"><div class="n">37</div><div class="stat-label">File, ~6.8k dòng</div></div>
+    </div>
+  </header>
+
+  <section id="what-is-mcp">
+    <h2>MCP là gì?</h2>
+    <p class="section-dek">Phần nền tảng — để phần còn lại của trang dễ hiểu hơn.</p>
+
+    <p style="margin-bottom:18px"><strong>MCP (Model Context Protocol)</strong> là một giao thức mở do Anthropic phát triển (2024), chuẩn hoá cách một AI agent (Claude, hay agent khác) kết nối với công cụ và dữ liệu bên ngoài. Ví von hay dùng: <strong>MCP giống USB-C cho AI</strong> — thay vì mỗi tool phải viết một kiểu tích hợp riêng cho từng app AI, viết một MCP server một lần là dùng được với mọi client hỗ trợ MCP (Claude Desktop, Claude Code, Cursor...).</p>
+
+    <div class="diagram-card" style="border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:20px;margin:18px 0">
+      <pre class="mermaid">
+graph LR
+    A["Host<br/>(Claude Desktop / Claude Code)"] --> B["Client<br/>(1 kết nối / server)"]
+    B <-->|"JSON-RPC 2.0<br/>qua stdio hoặc HTTP"| C["Server<br/>(process riêng)"]
+    C --> D["Tools<br/>(hành động)"]
+    C --> E["Resources<br/>(dữ liệu đọc)"]
+    C --> F["Prompts<br/>(mẫu câu lệnh)"]
+      </pre>
+    </div>
+
+    <h3 style="font-family:'Manrope',sans-serif;font-size:16px;font-weight:700;margin:28px 0 10px">Kiến trúc 3 thành phần</h3>
+    <div class="compare">
+      <div class="compare-row">
+        <div class="opt">Host</div>
+        <div class="verdict">App chứa AI mà người dùng tương tác trực tiếp — ví dụ Claude Desktop. Quản lý vòng đời của các Client, hiển thị UI xin phép (trust/approve) khi kết nối server mới.</div>
+      </div>
+      <div class="compare-row">
+        <div class="opt">Client</div>
+        <div class="verdict">Sống bên trong Host, giữ 1 kết nối 1-1 với đúng 1 Server. Dịch lệnh model muốn gọi thành JSON-RPC request, nhận kết quả trả về cho model.</div>
+      </div>
+      <div class="compare-row">
+        <div class="opt">Server</div>
+        <div class="verdict">Tiến trình riêng (như <code class="mono">packages/mcp-server</code> trong dự án này) — expose <strong>Tools</strong> (hành động có side-effect, vd <code class="mono">export_video</code>), <strong>Resources</strong> (dữ liệu đọc, vd nội dung file), <strong>Prompts</strong> (mẫu câu lệnh dựng sẵn). Không biết gì về cách model suy luận — chỉ trả lời đúng request.</div>
+      </div>
+    </div>
+    <p style="margin-top:14px;font-size:14.5px;color:var(--ink-dim)">Giao thức bên dưới: JSON-RPC 2.0, qua 1 trong 2 kiểu <strong>transport</strong> — <code class="mono">stdio</code> (server là tiến trình con, giao tiếp qua stdin/stdout, chỉ chạy local) hoặc <code class="mono">HTTP</code> (server là web service, nhận POST). Bắt tay ban đầu: <code class="mono">initialize</code> → <code class="mono">notifications/initialized</code> → model gọi <code class="mono">tools/list</code> để biết có tool gì, rồi <code class="mono">tools/call</code> để thực thi — đúng những gì <span class="mono">protocol.test.ts</span> trong dự án này kiểm thử.</p>
+
+    <h3 style="font-family:'Manrope',sans-serif;font-size:16px;font-weight:700;margin:28px 0 10px">Lợi ích</h3>
+    <ul class="plain">
+      <li><strong>Viết một lần, dùng nhiều nơi</strong> — server này (<code class="mono">opencut-headless</code>) hoạt động với Claude Desktop, Claude Code CLI, hay bất kỳ client MCP nào khác, không cần code riêng cho từng app.</li>
+      <li><strong>Schema rõ ràng, an toàn hơn "code tự do"</strong> — mỗi tool khai báo input schema (Zod → JSON Schema), agent chỉ gọi được qua interface đã định nghĩa, không chạy lệnh tuỳ ý.</li>
+      <li><strong>Tách biệt rõ trách nhiệm</strong> — logic nghiệp vụ (<code class="mono">tools.ts</code>) hoàn toàn độc lập với lớp giao thức (<code class="mono">register-tools.ts</code>), nên test được logic mà không cần dựng transport (đúng pattern 2 lớp test đã dùng xuyên suốt dự án này).</li>
+      <li><strong>Composable</strong> — một agent nối nhiều MCP server cùng lúc (trong session thật đang dùng: <code class="mono">opencut-headless</code> cùng với Google Docs, GitHub, Slack...), phối hợp tool từ nhiều nguồn trong một tác vụ.</li>
+    </ul>
+
+    <h3 style="font-family:'Manrope',sans-serif;font-size:16px;font-weight:700;margin:28px 0 10px">Hạn chế</h3>
+    <ul class="plain">
+      <li><strong>Thêm một lớp gián tiếp</strong> — mọi lệnh đi qua JSON-RPC thay vì gọi hàm trực tiếp, tốn thêm độ trễ (nhỏ, nhưng không phải 0).</li>
+      <li><strong>Không có auth chuẩn cho stdio</strong> — ai chạy được lệnh trên máy là dùng được server, không có lớp xác thực mặc định (HTTP transport có OAuth, nhưng phức tạp hơn để tự host).</li>
+      <li><strong>UX trust/approval còn non</strong> — đúng như saga gặp phải: quyết định reject một server bị lưu ngầm, không có cảnh báo rõ ràng; cấu hình không hot-reload giữa session đang chạy.</li>
+      <li><strong>Không phải client nào cũng hỗ trợ như nhau</strong> — có client chỉ nhận stdio, có client (như "Add custom connector" trong app GUI) chỉ nhận HTTP(S) public, không nhận local — phải tự cân nhắc transport nào phù hợp nơi sẽ dùng.</li>
+      <li><strong>Tác vụ dài chưa có cơ chế chuẩn mạnh</strong> — streaming tiến độ không chuẩn hoá tốt, nên dự án này phải tự làm job nền + tool polling riêng (<code class="mono">export_video</code> trả <code class="mono">jobId</code>, <code class="mono">get_render_status</code> để hỏi lại) thay vì có sẵn pattern "long-running tool" trong giao thức.</li>
+    </ul>
+  </section>
+
+  <section id="research">
+    <h2>Xuất phát điểm</h2>
+    <p class="section-dek">Trước khi code dòng nào, đã khảo sát các lựa chọn có sẵn để trả lời "ai đã làm việc này rồi".</p>
+    <div class="compare">
+      <div class="compare-row">
+        <div class="opt">Shotstack / Creatomate / JSON2Video</div>
+        <div class="verdict">Có MCP + headless thật, nhưng là engine "tạo video theo template" (ads, social clip) — không phải editor cắt dựng đầy đủ tính năng như CapCut.</div>
+      </div>
+      <div class="compare-row">
+        <div class="opt">Remotion</div>
+        <div class="verdict">Video = code (React), headless render mạnh — nhưng MCP server chính thức của họ đã bị tắt (26/10/2026), chuyển sang Agent Skills.</div>
+      </div>
+      <div class="compare-row">
+        <div class="opt">DaVinci Resolve + MCP</div>
+        <div class="verdict">Editor full tính năng, có MCP server cộng đồng (~440 tool) — nhưng cần bản Studio trả phí cho nhiều tính năng, và không chạy headless thuần (vẫn cần app GUI mở).</div>
+      </div>
+      <div class="compare-row chosen">
+        <div class="opt">OpenCut-classic</div>
+        <div class="verdict">Mã nguồn mở (MIT), kiến trúc tách UI khỏi logic rõ ràng, action registry có sẵn — nhưng archived, không có API. <strong>Chọn fork và tự thêm MCP + headless lên trên.</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="timeline">
+    <h2>4 phase, mỗi phase xác thực bằng chạy thật</h2>
+    <p class="section-dek">Không có phase nào dừng ở "nên hoạt động" — mỗi bước đều có bằng chứng chạy được trên máy.</p>
+    <div class="timeline">
+      <div class="phase">
+        <div class="phase-head"><span class="phase-no">PHASE 0</span><h3>Spike rủi ro kiến trúc</h3><span class="pass">PASS</span></div>
+        <p>Trước khi cam kết hướng "server-side thuần", xác thực 2 rủi ro lớn nhất bằng code chạy thật, không suy đoán.</p>
+        <div class="evidence">Binary Rust gọi <code>GpuContext::new()</code> ngoài wasm — chạy headless trên Metal (Apple M1), không cần canvas/display. <code>@napi-rs/canvas</code> — 7/7 API check PASS (blend mode, filter, text, xuất PNG thật).</div>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="phase-no">PHASE 1</span><h3>Project schema</h3><span class="pass">PASS</span></div>
+        <p>Package <code class="mono">project-schema</code> — Zod schema mirror đúng cấu trúc <code class="mono">TProject</code>/timeline gốc, <code class="mono">MediaTime</code>/<code class="mono">FrameRate</code> khớp struct Rust.</p>
+        <div class="evidence">7/7 test round-trip: parse hợp lệ, reject dữ liệu sai (MediaTime phân số, fps denominator=0...), passthrough có chủ đích cho Mask/Animation ngoài MVP.</div>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="phase-no">PHASE 2</span><h3>Headless render</h3><span class="pass">PASS</span></div>
+        <p>Phát hiện quan trọng: với scope MVP (không effect/mask), compositor GPU Rust <strong>không cần thiết</strong> — napi-rs/canvas + ffmpeg đủ để render.</p>
+        <div class="evidence">Render 15 frame từ project mẫu (1 clip + 1 text) → ffprobe xác nhận đúng codec/kích thước/số frame. Frame trích ra xem bằng mắt khớp.</div>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="phase-no">PHASE 3</span><h3>MCP server</h3><span class="pass">PASS</span></div>
+        <p>10 tool ban đầu, qua <code class="mono">@modelcontextprotocol/sdk</code>, cả stdio lẫn HTTP transport.</p>
+        <div class="evidence">Test 2 lớp: logic thuần + spawn server thật qua stdio/HTTP, dùng MCP Client thật gọi <code>tools/list</code>/<code>tools/call</code> qua wire protocol — không chỉ gọi hàm nội bộ.</div>
+      </div>
+      <div class="phase">
+        <div class="phase-head"><span class="phase-no">PHASE 4</span><h3>Persistence</h3><span class="pass">PASS</span></div>
+        <p>Phát sinh từ lúc dùng thử thật — project mất khi restart. Thêm lazy-load + write-through, 1 file JSON/project, tool <code class="mono">list_projects</code> + <code class="mono">delete_project</code> (12 tool).</p>
+        <div class="evidence">Test mô phỏng restart thật: <code>ProjectStore</code> thứ hai, cache rỗng, đọc lại + export + xoá đều đúng.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="saga">
+    <h2>Hành trình kết nối — khó hơn cả việc build server</h2>
+    <p class="section-dek">Server chạy đúng ngay từ đầu. Khó nhất hoá ra là nối nó vào app Claude Desktop thật.</p>
+    <div class="saga">
+      <div class="saga-step">
+        <div class="num">1</div>
+        <div class="body"><strong>Terminal không thấy 10 tool</strong> — session chat đã mở <em>trước khi</em> <code>.mcp.json</code> tồn tại. Bài học: MCP config chỉ đọc lúc session khởi động, không hot-reload.</div>
+      </div>
+      <div class="saga-step">
+        <div class="num">2</div>
+        <div class="body"><strong>Màn hình "Add custom connector" của app GUI</strong> chỉ nhận HTTPS URL, không nhận lệnh local (stdio) — phải thêm hẳn một <strong>HTTP transport</strong> mới cho server để thử đường này.</div>
+      </div>
+      <div class="saga-step">
+        <div class="num">3</div>
+        <div class="body"><strong>localhost không bao giờ hoạt động với connector đó</strong> — app GUI kết nối từ server Anthropic trên cloud, không phải từ máy local. Cần tunnel public + auth mới dùng được → chọn quay lại CLI stdio, an toàn hơn.</div>
+      </div>
+      <div class="saga-step">
+        <div class="num">4</div>
+        <div class="body"><strong>CLI thật vẫn không thấy server</strong> dù <code>.mcp.json</code> đúng — debug bằng <code>claude mcp get</code>, phát hiện status <strong>"✘ Rejected"</strong>: một lần approve/reject trước đó đã bị lưu lại. Fix bằng <code>claude mcp reset-project-choices</code>.</div>
+      </div>
+      <div class="saga-step">
+        <div class="num">5</div>
+        <div class="body"><strong>Thành công</strong> — 12 tool xuất hiện, gọi thật qua <code>create_project</code> → <code>add_media</code> → <code>add_clip</code> → <code>add_text</code> → <code>export_video</code>, video mp4 720p render ra đúng, frame xem bằng mắt khớp timecode.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="outcome">
+    <h2>Kết quả</h2>
+    <div class="outcome">
+      <div class="link-card">
+        <div><div class="meta">Code</div><div class="name">nvxtien/opencut-classic</div></div>
+        <a href="https://github.com/nvxtien/opencut-classic" target="_blank" rel="noopener">github.com/nvxtien/opencut-classic →</a>
+      </div>
+      <div class="link-card">
+        <div><div class="meta">Design doc</div><div class="name">MCP + Headless cho OpenCut</div></div>
+        <a href="https://claude.ai/artifact/QXDUYjTrp16Ugd5uaBTfMJ" target="_blank" rel="noopener">Xem artifact →</a>
+      </div>
+    </div>
+
+    <h2 style="margin-top:36px">Giới hạn đã biết, ghi lại không giấu</h2>
+    <ul class="plain">
+      <li>Chưa có audio trong export, chưa letterbox/crop tỉ lệ khung hình (scale méo).</li>
+      <li>Decode ffmpeg 1 process/frame — đúng nhưng chậm với clip dài.</li>
+      <li><code class="mono">media</code> và render job vẫn chỉ in-memory — mất khi server restart (chỉ project được lưu ra đĩa).</li>
+      <li>Không có file lock — hai client cùng ghi một project cùng lúc có thể đè dữ liệu nhau.</li>
+      <li>Chưa so sánh pixel-for-pixel với bản export từ web gốc (opencut-classic chưa build được bản web để đối chiếu).</li>
+    </ul>
+  </section>
+
+  <footer>
+    Toàn bộ xác thực bằng chạy thật trên máy (Apple M1, macOS) — không suy đoán từ tài liệu. Nguồn: <span class="mono">docs/mcp-headless.md</span> trong repo trên.
+  </footer>
+</div>

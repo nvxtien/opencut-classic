@@ -37,8 +37,17 @@ export async function probeMedia(filePath: string): Promise<ProbedMedia> {
 	if (!stream) {
 		throw new Error(`probeMedia: no video stream found in "${filePath}"`);
 	}
+	const durationSeconds = Number(data.format.duration);
+	if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+		// ffprobe reports duration as "N/A" for some containers — trusting that
+		// as-is turns into a stored NaN (JSON.stringify writes `null`), which
+		// then fails Zod validation the next time the project is loaded.
+		throw new Error(
+			`probeMedia: ffprobe returned an unusable duration ("${data.format.duration}") for "${filePath}"`,
+		);
+	}
 	return {
-		durationSeconds: Number(data.format.duration),
+		durationSeconds,
 		width: stream.width,
 		height: stream.height,
 		fps: parseFrameRate(stream.r_frame_rate),

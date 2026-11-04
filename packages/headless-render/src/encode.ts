@@ -48,35 +48,76 @@ export function openFrameEncoder({
 	const stderrChunks: Buffer[] = [];
 	proc.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 
+	// Set once, before `exitPromise` settles, so a `writeFrame` call waiting
+	// on `close`/stdin `error` (below) always sees the real reason, not a
+	// generic fallback. First error wins — a later EPIPE while we're still
+	// unwinding from the original failure shouldn't overwrite the cause.
+	let endedWith: Error | null = null;
 	let spawnError: Error | null = null;
-	proc.on("error", (err) => {
-		spawnError = err;
-	});
+	function markEnded(err: Error): void {
+		endedWith ??= err;
+	}
+
+	// Writing to a dead process's stdin raises EPIPE as an 'error' event on
+	// the stream itself (separate from the ChildProcess's own 'error'/
+	// 'close'). Node's default for an unhandled stream 'error' is to throw
+	// and crash the whole process — found by the regression test below
+	// (`write EPIPE` took down the Node process, not just this export).
+	proc.stdin.on("error", (err) => markEnded(err));
 
 	const exitPromise = new Promise<void>((resolve, reject) => {
 		proc.on("close", (code) => {
 			if (code !== 0) {
-				reject(
-					new Error(
-						`ffmpeg encode exited ${code}: ${Buffer.concat(stderrChunks).toString("utf8").slice(-2000)}`,
-					),
+				const err = new Error(
+					`ffmpeg encode exited ${code}: ${Buffer.concat(stderrChunks).toString("utf8").slice(-2000)}`,
 				);
+				markEnded(err);
+				reject(endedWith ?? err);
 				return;
 			}
 			resolve();
 		});
-		proc.on("error", reject);
+		proc.on("error", (err) => {
+			spawnError = err;
+			markEnded(err);
+			reject(err);
+		});
 	});
+	// Observed by writeFrame/finish below; without this, an export that
+	// fails before either is called (nothing written yet) logs an
+	// unhandled-rejection warning for a promise nobody awaited in time.
+	exitPromise.catch(() => {});
 
 	return {
 		writeFrame(rgba: Buffer): Promise<void> {
 			if (spawnError) return Promise.reject(spawnError);
-			return new Promise((resolve) => {
-				if (!proc.stdin.write(rgba)) {
-					proc.stdin.once("drain", resolve);
-				} else {
+			if (endedWith) return Promise.reject(endedWith);
+			if (proc.stdin.write(rgba)) return Promise.resolve();
+			// Backpressure: wait for the stream to drain, but also give up if
+			// the process closes or its stdin errors first (crash, disk full,
+			// bad pixel data) — otherwise a dead process never drains and this
+			// hangs forever.
+			return new Promise((resolve, reject) => {
+				const cleanup = () => {
+					proc.stdin.off("drain", onDrain);
+					proc.off("close", onEnd);
+					proc.stdin.off("error", onEnd);
+				};
+				const onDrain = () => {
+					cleanup();
 					resolve();
-				}
+				};
+				const onEnd = (err?: Error) => {
+					cleanup();
+					reject(
+						endedWith ??
+							err ??
+							new Error("ffmpeg encode process closed before accepting this frame"),
+					);
+				};
+				proc.stdin.once("drain", onDrain);
+				proc.once("close", onEnd);
+				proc.stdin.once("error", onEnd);
 			});
 		},
 		async finish(): Promise<void> {
