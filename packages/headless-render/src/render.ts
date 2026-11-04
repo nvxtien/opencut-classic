@@ -1,5 +1,7 @@
+import { createCanvas } from "@napi-rs/canvas";
 import type { Project, Scene } from "@opencut/project-schema";
 import { composeFrame } from "./compositor";
+import type { FrameSource } from "./decode";
 import { openFrameEncoder } from "./encode";
 import { mediaTimeFromSeconds } from "./time";
 
@@ -34,15 +36,25 @@ export async function renderProject({
 }: RenderProjectParams): Promise<RenderProjectResult> {
 	const { width, height } = project.settings.canvasSize;
 	const encoder = openFrameEncoder({ outputPath, width, height, fps });
+	const canvas = createCanvas(width, height);
+	const ctx = canvas.getContext("2d");
+	// One decode process per element (opened lazily, the first frame that
+	// needs it), reused across every frame that element is active for —
+	// see the doc comment on `ComposeFrameParams.decoders`.
+	const decoders = new Map<string, FrameSource>();
 
 	const frameCount = Math.max(1, Math.round(durationSeconds * fps));
-	for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-		const timeSeconds = frameIndex / fps;
-		const time = mediaTimeFromSeconds(timeSeconds);
-		const rgba = await composeFrame({ project, scene, time, mediaPaths });
-		await encoder.writeFrame(rgba);
+	try {
+		for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+			const timeSeconds = frameIndex / fps;
+			const time = mediaTimeFromSeconds(timeSeconds);
+			await composeFrame({ project, scene, time, mediaPaths, fps, decoders, ctx });
+			await encoder.writeFrame(canvas.data());
+		}
+		await encoder.finish();
+	} finally {
+		for (const source of decoders.values()) source.close();
 	}
 
-	await encoder.finish();
 	return { outputPath, frameCount };
 }

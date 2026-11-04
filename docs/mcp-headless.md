@@ -272,7 +272,37 @@ spike riêng.
      `dataDir` có thể ghi đè nhau (không có file lock); ngoài phạm vi vì MVP
      giả định 1 agent/1 phiên tại một thời điểm.
 
-## 6. Ngoài phạm vi MVP (ghi nhận, chưa làm)
+6. ✅ **Fix hiệu năng decode — XONG (2026-11-05).** Review hiệu năng đo thật
+   trên máy: pipeline gốc (1 process ffmpeg/frame) mất **44ms/frame** (720p).
+   Thử nâng cấp lên 1 process decode **sống liên tục** (giống cách `encode.ts`
+   đã làm) — hoá ra **chậm hơn hẳn**: đo được **127ms/frame** khi decode và
+   encode chạy *song song* cùng lúc trên nội dung thật (dù mỗi process riêng
+   lẻ cực nhanh: decode 146ms/120 frame, encode 180ms/120 frame nếu chạy nối
+   tiếp). Chưa tìm ra nguyên nhân gốc chính xác (giống kiểu tranh chấp tài
+   nguyên giữa 2 process ffmpeg nặng cùng lúc, đặc thù môi trường máy này) —
+   thử giới hạn `-threads` cho cả hai không khắc phục được.
+
+   **Fix:** `decode.ts` giờ decode **trọn vẹn 1 element vào RAM trước** (1
+   process ffmpeg, `-frames:v N` để không decode dư), đóng hẳn process đó,
+   rồi mới bắt đầu feed từng frame cho encoder — không còn 2 process ffmpeg
+   nặng chạy chồng lên nhau tại bất kỳ thời điểm nào. Đổi `compositor.ts`
+   dùng `ImageData`/`putImageData` thẳng từ buffer RGBA thay vì qua PNG
+   trung gian (bớt 1 bước mã hoá/giải mã). Canvas cũng tái sử dụng across
+   frame thay vì tạo mới mỗi frame.
+
+   **Kết quả đo lại:** cùng nội dung thật, **2.56ms/frame** — nhanh hơn
+   baseline ban đầu **~17 lần**. Export 4s qua đúng MCP tool thật (end-to-end)
+   chỉ còn 357ms. Đã verify lại bằng mắt: frame trích ra khớp đúng
+   timecode + text overlay như trước khi tối ưu. Toàn bộ test suite cũ
+   (tools/protocol/http-protocol/store/overlay-duration/render/encode) đều
+   PASS sau khi sửa.
+
+   **Đánh đổi đã biết:** giữ cả 1 element trong RAM (width×height×4×frameCount
+   byte) thay vì stream — chấp nhận được ở quy mô clip hiện tại, nhưng sẽ là
+   vấn đề thật với clip rất dài (vài chục phút trở lên) ở độ phân giải cao.
+   Ngoài phạm vi lần sửa này.
+
+## 7. Ngoài phạm vi MVP (ghi nhận, chưa làm)
 - Auto-caption/transcription (`transcription/` module hiện gọi model ASR nào đó
   cần xác minh riêng — có thể chạy server-side dễ dàng vì không phải DOM-bound,
   nhưng chưa khảo sát).
