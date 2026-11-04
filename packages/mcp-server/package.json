@@ -9,7 +9,7 @@
 		"typecheck": "tsc --noEmit",
 		"start": "tsx src/server.ts",
 		"start:http": "tsx src/http-server.ts",
-		"test": "tsx test/tools.test.ts && tsx test/protocol.test.ts && tsx test/http-protocol.test.ts && tsx test/store.test.ts && tsx test/overlay-duration.test.ts"
+		"test": "tsx test/tools.test.ts && tsx test/protocol.test.ts && tsx test/http-protocol.test.ts && tsx test/store.test.ts && tsx test/overlay-duration.test.ts && tsx test/conflict.test.ts"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.2",

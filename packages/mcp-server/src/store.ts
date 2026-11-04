@@ -54,6 +54,18 @@ export class ProjectStore {
 	private readonly cache = new Map<string, Project>();
 	/** In-flight disk loads, keyed by projectId — see `getProject`. */
 	private readonly loading = new Map<string, Promise<Project>>();
+	/**
+	 * `metadata.updatedAt` (as millis) of the on-disk revision each cached
+	 * project was last known to match — set on load and after every save.
+	 * Used by `saveProject` to detect "someone else wrote this project since
+	 * I last saw it", which only the write-through, lazy-load design can't
+	 * catch on its own: two *processes* (e.g. this server's stdio and HTTP
+	 * entry points, run at once, pointed at the same `dataDir`) each cache
+	 * their own copy in their own memory, so one process's cache has no way
+	 * to know the file moved — this is the check that replaces that missing
+	 * cross-process signal.
+	 */
+	private readonly knownRevision = new Map<string, number>();
 	readonly media = new Map<string, MediaRecord>();
 	readonly jobs = new Map<string, RenderJob>();
 
@@ -91,6 +103,7 @@ export class ProjectStore {
 			}
 			const project = ProjectSchema.parse(JSON.parse(raw));
 			this.cache.set(projectId, project);
+			this.knownRevision.set(projectId, project.metadata.updatedAt.getTime());
 			return project;
 		})();
 		this.loading.set(projectId, load);
@@ -101,17 +114,56 @@ export class ProjectStore {
 		}
 	}
 
-	/** Writes a project to disk and refreshes the in-memory cache. Used both for a brand-new project and after mutating an already-loaded one. */
+	/**
+	 * Writes a project to disk and refreshes the in-memory cache. Used both
+	 * for a brand-new project and after mutating an already-loaded one.
+	 *
+	 * Throws instead of overwriting if this project was previously loaded by
+	 * this store (there's a `knownRevision` for it) and the on-disk file's
+	 * `metadata.updatedAt` no longer matches — another process (or another
+	 * `ProjectStore` instance) saved a newer revision in the meantime. A
+	 * brand-new project (never loaded, no `knownRevision` entry) always
+	 * writes through with no check, same as before.
+	 */
 	async saveProject(project: Project): Promise<void> {
+		const projectId = project.metadata.id;
+		const known = this.knownRevision.get(projectId);
+		if (known !== undefined) {
+			const onDiskUpdatedAt = await this.readUpdatedAtFromDisk(projectId);
+			if (onDiskUpdatedAt !== null && onDiskUpdatedAt !== known) {
+				throw new Error(
+					`Project "${projectId}" was modified elsewhere since it was last loaded here ` +
+						`(on disk: ${new Date(onDiskUpdatedAt).toISOString()}, expected: ${new Date(known).toISOString()}). ` +
+						"Call get_project_state again and re-apply this change.",
+				);
+			}
+		}
+
 		await this.ensureDataDir();
-		await writeFile(this.projectPath(project.metadata.id), JSON.stringify(project, null, 2));
-		this.cache.set(project.metadata.id, project);
+		await writeFile(this.projectPath(projectId), JSON.stringify(project, null, 2));
+		this.cache.set(projectId, project);
+		this.knownRevision.set(projectId, project.metadata.updatedAt.getTime());
+	}
+
+	/** Reads just `metadata.updatedAt` from the on-disk file, without full schema validation — `saveProject`'s conflict check needs only this one field. Returns `null` if the file doesn't exist or can't be parsed (treated as "nothing to conflict with"). */
+	private async readUpdatedAtFromDisk(projectId: string): Promise<number | null> {
+		try {
+			const raw = await readFile(this.projectPath(projectId), "utf8");
+			const parsed = JSON.parse(raw) as { metadata?: { updatedAt?: string } };
+			const updatedAt = parsed.metadata?.updatedAt;
+			if (!updatedAt) return null;
+			const ms = new Date(updatedAt).getTime();
+			return Number.isFinite(ms) ? ms : null;
+		} catch {
+			return null;
+		}
 	}
 
 	/** Deletes a project's file and cache entry. Throws if it never existed, same as `getProject`. */
 	async deleteProject(projectId: string): Promise<void> {
 		await this.getProject(projectId); // throws "No project with id" if missing
 		this.cache.delete(projectId);
+		this.knownRevision.delete(projectId);
 		try {
 			await unlink(this.projectPath(projectId));
 		} catch {

@@ -1,6 +1,4 @@
 import type {
-	CanvasSize,
-	FrameRate,
 	ImageElement,
 	MediaTime,
 	Project,
@@ -8,7 +6,7 @@ import type {
 	TextElement,
 	VideoElement,
 } from "@opencut/project-schema";
-import { ProjectSchema } from "@opencut/project-schema";
+import { createEmptyProject } from "@opencut/project-schema";
 import {
 	mediaTimeFromSeconds,
 	renderProject,
@@ -45,60 +43,18 @@ export async function createProject(
 	store: ProjectStore,
 	input: CreateProjectInput,
 ): Promise<Project> {
-	const now = new Date();
-	const canvasSize: CanvasSize = {
-		width: input.width ?? 1920,
-		height: input.height ?? 1080,
-	};
-	const fps: FrameRate = {
-		numerator: input.fpsNumerator ?? 30,
-		denominator: input.fpsDenominator ?? 1,
-	};
-	const sceneId = nextId("scene");
-	const project: Project = {
-		metadata: {
-			id: nextId("proj"),
-			name: input.name,
-			duration: 0 as MediaTime,
-			createdAt: now,
-			updatedAt: now,
-		},
-		scenes: [
-			{
-				id: sceneId,
-				name: "Main",
-				isMain: true,
-				tracks: {
-					main: {
-						id: nextId("track"),
-						name: "Video",
-						type: "video",
-						muted: false,
-						hidden: false,
-						elements: [],
-					},
-					overlay: [],
-					audio: [],
-				},
-				bookmarks: [],
-				createdAt: now,
-				updatedAt: now,
-			},
-		],
-		currentSceneId: sceneId,
-		settings: {
-			fps,
-			canvasSize,
-			background: {
-				type: "color",
-				color: input.backgroundColor ?? "#000000",
-			},
-		},
-		version: 1,
-	};
-	const validated = ProjectSchema.parse(project);
-	await store.saveProject(validated);
-	return validated;
+	const project = createEmptyProject({
+		id: nextId("proj"),
+		sceneId: nextId("scene"),
+		mainTrackId: nextId("track"),
+		name: input.name,
+		canvasSize: { width: input.width ?? 1920, height: input.height ?? 1080 },
+		fps: { numerator: input.fpsNumerator ?? 30, denominator: input.fpsDenominator ?? 1 },
+		backgroundColor: input.backgroundColor ?? "#000000",
+		now: new Date(),
+	});
+	await store.saveProject(project);
+	return project;
 }
 
 export interface AddMediaInput {

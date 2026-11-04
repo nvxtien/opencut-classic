@@ -4,6 +4,8 @@ import {
 	CanvasSizeSchema,
 	FrameRateSchema,
 	MediaTimeSchema,
+	type CanvasSize,
+	type FrameRate,
 } from "./media-time";
 import { SceneSchema } from "./timeline";
 
@@ -48,6 +50,80 @@ export const ProjectSchema = z.object({
 	scenes: z.array(SceneSchema).min(1),
 	currentSceneId: z.string(),
 	settings: ProjectSettingsSchema,
+	// shortcut: `version` is written (always 1) but never read — there's no
+	// migration path, so a future required-field change to this schema will
+	// hard-fail ProjectSchema.parse() on every project saved under an older
+	// shape instead of upgrading it. upgrade: once a real schema change is
+	// needed, branch on `version` in ProjectStore.getProject (store.ts)
+	// before calling ProjectSchema.parse, and migrate older shapes forward.
 	version: z.number().int(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
+
+/**
+ * Builds a valid, empty `Project`: one scene, one empty main video track, no
+ * overlays. This is the canonical shape of "a brand-new project" — the data
+ * layer's own concern, not the MCP tool layer's (`@opencut/mcp-server`'s
+ * `create_project` tool is its only caller today, but any future consumer
+ * that needs to create a project should import this rather than re-build
+ * the shape by hand). Id generation stays the caller's choice (how ids are
+ * minted is an infra decision, not a data-shape one).
+ */
+export function createEmptyProject({
+	id,
+	sceneId,
+	mainTrackId,
+	name,
+	canvasSize,
+	fps,
+	backgroundColor,
+	now,
+}: {
+	id: string;
+	sceneId: string;
+	mainTrackId: string;
+	name: string;
+	canvasSize: CanvasSize;
+	fps: FrameRate;
+	backgroundColor: string;
+	now: Date;
+}): Project {
+	return ProjectSchema.parse({
+		metadata: {
+			id,
+			name,
+			duration: 0,
+			createdAt: now,
+			updatedAt: now,
+		},
+		scenes: [
+			{
+				id: sceneId,
+				name: "Main",
+				isMain: true,
+				tracks: {
+					main: {
+						id: mainTrackId,
+						name: "Video",
+						type: "video",
+						muted: false,
+						hidden: false,
+						elements: [],
+					},
+					overlay: [],
+					audio: [],
+				},
+				bookmarks: [],
+				createdAt: now,
+				updatedAt: now,
+			},
+		],
+		currentSceneId: sceneId,
+		settings: {
+			fps,
+			canvasSize,
+			background: { type: "color", color: backgroundColor },
+		},
+		version: 1,
+	});
+}
